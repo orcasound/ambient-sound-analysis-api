@@ -29,46 +29,6 @@ npm install \
 
 ---
 
-## Design
-
-```mermaid
-flowchart TD
-    Start([Start])
-    CLI[CLI (cli.ts)]
-    API[REST API (api.ts)]
-    ParseArgs[Parse CLI Args / Parse API Request]
-    BatchCheck{Batch Mode?}
-    ReadCSV[Read CSV Manifest]
-    ForEachJob[For Each Job]
-    SingleJob[Single Job]
-    ProcessJob[processJob (worker.ts)]
-    Download[Download HLS Segments]
-    FFMPEG[Run ffmpeg (WAV/FLAC)]
-    PSD[Compute PSD (analytics.ts)]
-    Meta[Write .meta.json]
-    Output[Write Output Files]
-    Summary[Write pairs.json (batch)]
-    End([End])
-
-    Start --> CLI
-    Start --> API
-    CLI --> ParseArgs
-    API --> ParseArgs
-    ParseArgs --> BatchCheck
-    BatchCheck -- Yes --> ReadCSV --> ForEachJob
-    ForEachJob --> ProcessJob
-    BatchCheck -- No --> SingleJob --> ProcessJob
-    ProcessJob --> Download --> FFMPEG
-    FFMPEG --> PSD
-    PSD --> Meta
-    Meta --> Output
-    Output --> Summary
-    Summary --> End
-    Output --> End 
-```
-
----
-
 ## How to Use
 
 ### Single Clip Extraction
