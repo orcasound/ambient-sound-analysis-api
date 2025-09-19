@@ -31,7 +31,7 @@ npm install \
 
 ### Single Clip Extraction
 
-You can extract and upload a single audio clip to S3 using the CLI:
+You can extract and save a single audio clip using the CLI:
 
 ```sh
 npx ts-node src/cli.ts \
@@ -39,14 +39,26 @@ npx ts-node src/cli.ts \
   --start 2025-09-18T12:00:00Z \
   --end 2025-09-18T12:05:00Z \
   --formats wav psd \
-  --s3Bucket your-bucket-name \
-  --s3Prefix clips/
+  --out local
+```
+
+- To use S3 output (placeholder, not yet implemented):
+
+```sh
+npm run clip -- \
+  --feedSlug orcasound_lab \
+  --start 2025-09-12T10:00:00Z \
+  --end   2025-09-12T10:05:00Z \
+  --out   s3   # or local
+  # --s3Bucket your-bucket-name \
+  # --s3Prefix clips/
 ```
 
 - `feedSlug`: The audio feed identifier (e.g., `orcasound_lab`)
 - `start`/`end`: ISO8601 timestamps for the clip window
 - `formats`: Output formats (`wav`, `flac`, `psd`)
-- `s3Bucket`: Your AWS S3 bucket name
+- `out`: Output destination, either `local` (default) or `s3` (S3 logic is a placeholder)
+- `s3Bucket`: Your AWS S3 bucket name (required if using `--out s3`)
 - `s3Prefix`: (Optional) S3 key prefix for uploads
 
 ### Batch Processing from CSV
@@ -65,20 +77,18 @@ Run batch processing:
 ```sh
 npx ts-node src/cli.ts \
   --manifest jobs.csv \
-  --formats wav psd \
-  --s3Bucket your-bucket-name \
-  --s3Prefix clips/
+  --formats wav psd
 ```
 
-A summary file will be written to the `output/` directory, named as `MMDDYYYY_timestamp_pairs.json` (e.g., `output/09162025_1714060000_pairs.json`).
+A summary file will be written to the `clips/<feedSlug>/<YYYY>/<MM>/<DD>/` directory, named as `pairs.json` (e.g., `clips/orcasound_lab/2025/09/18/pairs.json`).
 
 ---
 
 ## Output
 
-- Audio files and analytics are written to the local `output/clips/` directory.
+- Audio files and analytics are written to the local `clips/<feedSlug>/<YYYY>/<MM>/<DD>/` directory.
 - Each clip includes a `.wav` (and/or `.flac`), `.psd.json` (if requested), and `.meta.json` sidecar file with metadata.
-- Output file paths are printed to the console and/or written to the summary JSON in the `output/` directory in batch mode.
+- Output file paths are printed to the console and/or written to the summary JSON in the `clips/<feedSlug>/<YYYY>/<MM>/<DD>/` directory in batch mode. If a job fails, the error is included in the summary JSON and does not block other jobs.
 
 ---
 
@@ -107,6 +117,34 @@ A summary file will be written to the `output/` directory, named as `MMDDYYYY_ti
 - Provides the `computeMetrics` function, which takes a WAV audio buffer and computes audio analytics such as RMS, power spectral density (PSD), band powers, SNR, crest factor, and transience rate.
 - Used internally by `worker.ts` when the `psd` format is requested.
 - You can import and use `computeMetrics` in your own scripts for standalone audio analytics on WAV buffers.
+
+---
+
+## Running in Docker
+
+A `Dockerfile` is provided for reproducible, containerized runs. No global ffmpeg is required.
+
+### Build the Docker image
+
+```sh
+docker build -t ambient-sound-api .
+```
+
+### Run a batch job (mount output to host)
+
+```sh
+docker run -v $(pwd)/output:/app/output ambient-sound-api --manifest jobs.csv --formats wav psd
+```
+
+### Run a single job
+
+```sh
+docker run -v $(pwd)/output:/app/output ambient-sound-api --feedSlug orcasound_lab --start 2025-09-18T12:00:00Z --end 2025-09-18T12:05:00Z --formats wav
+```
+
+- The `-v $(pwd)/output:/app/output` mounts your local output folder to the container so results are accessible on your host.
+- All output and temp files are written to local directories inside the container by default.
+- No global ffmpeg or special system setup is required.
 
 ---
 

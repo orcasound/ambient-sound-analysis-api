@@ -14,17 +14,21 @@ import { processJob, ClipJob } from './worker';
  *   --end        Clip end time (ISO8601 string)
  *   --manifest   CSV manifest for batch jobs (string)
  *   --formats    Output formats (array: wav, flac, psd)
- *   --s3Bucket   S3 bucket for uploads (string, required)
+ *   --out        Output destination: local or s3 (default: local)
+ *   --s3Bucket   S3 bucket for uploads (string, required if --out s3)
  *   --s3Prefix   S3 key prefix (string, default: 'clips/')
+ *   --feedId     Optional feedId (not the same as feedSlug)
  */
 async function main() {
   const argv = yargs
     .option('feedSlug',  { type: 'string', describe: 'Audio feed identifier' })
+    .option('feedId',    { type: 'string', describe: 'Optional feedId (not the same as feedSlug)' })
     .option('start',     { type: 'string', describe: 'Clip start time (ISO8601)' })
     .option('end',       { type: 'string', describe: 'Clip end time (ISO8601)' })
     .option('manifest',  { type: 'string', describe: 'CSV manifest for batch jobs' })
     .option('formats',   { type: 'array', choices: ['wav','flac','psd'], default: ['wav'], describe: 'Output formats' })
-    .option('s3Bucket',  { type: 'string', demandOption: true, describe: 'S3 bucket for uploads' })
+    .option('out',       { type: 'string', choices: ['local', 's3'], default: 'local', describe: 'Output destination: local or s3' })
+    .option('s3Bucket',  { type: 'string', describe: 'S3 bucket for uploads' })
     .option('s3Prefix',  { type: 'string', default: 'clips/', describe: 'S3 key prefix' })
     .demandOption(argv => argv.manifest ? [] : ['feedSlug','start','end'])
     .help()
@@ -37,52 +41,54 @@ async function main() {
      * Batch mode: process jobs from CSV manifest file.
      * Each row should have feedSlug, start, end columns.
      * If a 'comment' column is present, it will be included in the summary.
-     * Results are written to output/MMDDYYYY_timestamp_pairs.json.
+     * Results are written to clips/<feedSlug>/<YYYY>/<MM>/<DD>/pairs.json.
      */
-    const rows = parse(fs.readFileSync(argv.manifest, 'utf8'), { columns: true }) as Array<{ feedSlug: string; start: string; end: string; comment?: string }>;
-    for (const { feedSlug, start, end, comment } of rows) {
+    const rows = parse(fs.readFileSync(argv.manifest, 'utf8'), { columns: true }) as Array<{ feedSlug: string; start: string; end: string; comment?: string; feedId?: string }>;
+    for (const { feedSlug, start, end, comment, feedId } of rows) {
       const job: ClipJob = {
+        feedId,
         feedSlug, start, end,
         formats: argv.formats,
         s3Bucket: argv.s3Bucket,
         s3Prefix: argv.s3Prefix,
-        m3u8Url: `https://live.orcasound.net/${feedSlug}/playlist.m3u8`
+        m3u8Url: `https://live.orcasound.net/${feedSlug}/playlist.m3u8`,
+        out: argv.out
       };
       try {
         const res = await processJob(job);
         summary.push({ feedSlug, start, end, comment, ...res.urls });
       } catch (err: any) {
         console.error(`❌ ${feedSlug} ${start}→${end}: ${err.message}`);
+        summary.push({ feedSlug, start, end, comment, error: err.message });
       }
     }
-    // Create output directory if it doesn't exist
-    const outputDir = path.join(process.cwd(), 'output');
-    if (!fs.existsSync(outputDir)) {
-      fs.mkdirSync(outputDir, { recursive: true });
+    // Write summary to correct output directory
+    if (rows.length > 0) {
+      const first = rows[0];
+      const yyyy = new Date(first.start).getFullYear();
+      const mm = String(new Date(first.start).getMonth() + 1).padStart(2, '0');
+      const dd = String(new Date(first.start).getDate()).padStart(2, '0');
+      const outDir = path.join(process.cwd(), 'output', 'clips', first.feedSlug, String(yyyy), mm, dd);
+      if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+      const outPath = path.join(outDir, 'pairs.json');
+      fs.writeFileSync(outPath, JSON.stringify(summary, null, 2));
+      console.log(`✅ Batch complete, summary → ${outPath}`);
     }
-    // Generate filename: MMDDYYYY_timestamp_pairs.json
-    const now = new Date();
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const dd = String(now.getDate()).padStart(2, '0');
-    const yyyy = now.getFullYear();
-    const timestamp = String(Math.floor(now.getTime() / 1000));
-    const outFile = `${mm}${dd}${yyyy}_${timestamp}_pairs.json`;
-    const outPath = path.join(outputDir, outFile);
-    fs.writeFileSync(outPath, JSON.stringify(summary, null, 2));
-    console.log(`✅ Batch complete, summary → ${outPath}`);
   } else {
     /**
      * Single job mode: process a single audio clip job from CLI arguments.
      * Optionally accepts a --comment argument.
      */
     const job: ClipJob = {
+      feedId: argv.feedId,
       feedSlug: argv.feedSlug,
       start:    argv.start,
       end:      argv.end,
       formats:  argv.formats,
       s3Bucket: argv.s3Bucket,
       s3Prefix: argv.s3Prefix,
-      m3u8Url:  `https://live.orcasound.net/${argv.feedSlug}/playlist.m3u8`
+      m3u8Url:  `https://live.orcasound.net/${argv.feedSlug}/playlist.m3u8`,
+      out: argv.out
     };
     const { urls } = await processJob(job);
     const singleSummary = {

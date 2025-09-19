@@ -19,13 +19,15 @@ import ffmpegBin from 'ffmpeg-static'; // Use ESM import for ffmpeg-static
  * @property m3u8Url - The HLS playlist URL.
  */
 export interface ClipJob {
+  feedId?: string; // Optional feedId, not the same as feedSlug
   feedSlug: string;
   start: string;           // ISO8601
   end: string;             // ISO8601
   formats: Array<'wav' | 'flac' | 'psd'>;
-  s3Bucket: string;
-  s3Prefix: string;        // e.g. 'clips/'
-  m3u8Url: string;
+  s3Bucket?: string;
+  s3Prefix?: string;        // e.g. 'clips/'
+  m3u8Url?: string;
+  out?: 'local' | 's3'; // output destination
 }
 
 /**
@@ -57,11 +59,18 @@ export async function processJob(job: ClipJob): Promise<ClipResult> {
   }
 
   // 2. Fetch playlist & filter by programDateTime
-  const playlistText = (await axios.get(job.m3u8Url)).data as string;
+  let playlistText: string;
+  try {
+    if (!job.m3u8Url) throw new Error('m3u8Url is required');
+    playlistText = (await axios.get(job.m3u8Url)).data as string;
+  } catch (err) {
+    console.error(`[${job.feedSlug}] ERROR: Failed to fetch playlist: ${job.m3u8Url}`);
+    throw new Error(`Failed to fetch playlist for ${job.feedSlug}: ${err}`);
+  }
   const playlist = HLS.parse(playlistText);
 
   if (playlist.isMasterPlaylist) {
-    throw new Error('Provided playlist is a MasterPlaylist, expected a MediaPlaylist');
+    throw new Error(`[${job.feedSlug}] Provided playlist is a MasterPlaylist, expected a MediaPlaylist: ${job.m3u8Url}`);
   }
 
   const mediaPlaylist = playlist as HLS.types.MediaPlaylist;
@@ -73,8 +82,12 @@ export async function processJob(job: ClipJob): Promise<ClipResult> {
     return ts >= startTs && ts < endTs;
   });
   if (segments.length === 0) {
+    console.error(`[${job.feedSlug}] ERROR: No segments in range [${job.start} → ${job.end}] for playlist: ${job.m3u8Url}`);
     throw new Error(`No segments in range [${job.start} → ${job.end}]`);
   }
+  // Log segment URIs for traceability
+  console.log(`[${job.feedSlug}] Segments for window [${job.start} → ${job.end}]:`);
+  segments.forEach(seg => console.log(`  ${seg.uri}`));
 
   // 3. Deterministic hash for idempotency
   const hash = crypto
@@ -86,8 +99,13 @@ export async function processJob(job: ClipJob): Promise<ClipResult> {
   // 4. Build local temp directory for intermediate files
   const dt = new Date(startTs).toISOString().replace(/[:.]/g, '');
   const durSec = Math.round((endTs - startTs) / 1000);
-  const base = `${job.feedSlug}_${dt}_${durSec}s_${hash}`;
-  const tmpDir = path.join(process.cwd(), 'tmp', base);
+  const yyyy = new Date(startTs).getFullYear();
+  const mm = String(new Date(startTs).getMonth() + 1).padStart(2, '0');
+  const dd = String(new Date(startTs).getDate()).padStart(2, '0');
+  const dtShort = new Date(startTs).toISOString().slice(0,19).replace(/[-:T]/g, '').replace(/Z$/, ''); // YYYYMMDDHHMMSS
+  const base = `${job.feedSlug}_${dtShort}_${durSec}s`;
+  const baseWithHash = `${base}_${hash}`;
+  const tmpDir = path.join(process.cwd(), 'tmp', baseWithHash);
   fs.mkdirSync(tmpDir, { recursive: true });
 
   // 5. Write ffmpeg concat list for segment download
@@ -123,12 +141,18 @@ export async function processJob(job: ClipJob): Promise<ClipResult> {
     // Run ffmpeg as a child process and await completion.
     await new Promise<void>((resolve, reject) => {
       const proc = spawn(ffmpegBin as string, args, { stdio: 'inherit' });
-      proc.on('error', reject);
-      proc.on('exit', code =>
-        code === 0
-          ? resolve()
-          : reject(new Error(`ffmpeg ${fmt} exited ${code}`))
-      );
+      proc.on('error', (err) => {
+        console.error(`[${job.feedSlug}] ERROR: Failed to start ffmpeg for ${fmt}:`, err);
+        reject(err);
+      });
+      proc.on('exit', code => {
+        if (code === 0) {
+          resolve();
+        } else {
+          console.error(`[${job.feedSlug}] ERROR: ffmpeg exited with code ${code} for format ${fmt} [${job.start} → ${job.end}]`);
+          reject(new Error(`ffmpeg ${fmt} exited ${code}`));
+        }
+      });
     });
     outputs[fmt] = outFile;
   }
@@ -147,21 +171,37 @@ export async function processJob(job: ClipJob): Promise<ClipResult> {
 
   // 8. Write .meta.json file for each clip
   const meta = {
+    feedId: job.feedId || '',
     feedSlug: job.feedSlug,
     start: job.start,
     end: job.end,
-    formats: job.formats,
-    durationSec: durSec,
-    files: { ...outputs },
-    hash,
+    duration_s: durSec || 0,
+    samplerate_hz: 48000,
+    channels: 1,
+    m3u8Url: job.m3u8Url || '',
+    segments: Array.isArray(segments) ? segments.map(seg => ({ uri: seg.uri || '', programDateTime: seg.programDateTime || '' })) : [],
+    ffmpeg_args: Array.isArray(job.formats) ? job.formats.map(fmt => {
+      const outFile = path.join(tmpDir, `${base}.${fmt}`);
+      const args = [
+        '-protocol_whitelist', 'file,http,https,tcp,tls',
+        '-f', 'concat', '-safe', '0', '-i', listFile,
+        '-ac', '1', '-ar', '48000'
+      ];
+      if (fmt === 'wav') args.push('-c:a', 'pcm_s16le', outFile);
+      else if (fmt === 'flac') args.push('-c:a', 'flac', outFile);
+      return args.join(' ');
+    }) : [],
+    formats: job.formats || [],
+    files: outputs || {},
+    sha256_hash: hash || '',
     created: new Date().toISOString()
   };
   const metaPath = path.join(tmpDir, `${base}.meta.json`);
   fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2));
   outputs['meta'] = metaPath;
 
-  // 9. Move/copy all outputs to a shared output directory (e.g., output/clips/)
-  const outputDir = path.join(process.cwd(), 'output', 'clips');
+  // 9. Move/copy all outputs to a shared output directory (e.g., clips/<feedSlug>/<YYYY>/<MM>/<DD>/)
+  const outputDir = path.join(process.cwd(), 'output', 'clips', job.feedSlug, String(yyyy), mm, dd);
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
   }
