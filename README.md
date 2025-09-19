@@ -31,8 +31,6 @@ npm install \
 
 ## Design
 
-## Design
-
 ```mermaid
 flowchart TD
     Start([Start])
@@ -66,7 +64,8 @@ flowchart TD
     Meta --> Output
     Output --> Summary
     Summary --> End
-    Output --> End ```
+    Output --> End 
+```
 
 ---
 
