@@ -1,0 +1,15 @@
+{
+  "extends": "@tsconfig/node18/tsconfig.json",
+  "module": "node",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "declaration": true,
+    "noImplicitAny": false
+  },
+  "exclude": [
+    "webpack.config.js",
+    "dist",
+    "test"
+  ]
+}

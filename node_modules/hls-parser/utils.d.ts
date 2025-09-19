@@ -1,0 +1,24 @@
+type Options = {
+    strictMode?: boolean;
+    allowClosedCaptionsNone?: boolean;
+    silent?: boolean;
+};
+declare function THROW(err: Error): void;
+declare function ASSERT(msg: string, ...options: boolean[]): void;
+declare function CONDITIONALASSERT(...options: any[]): void;
+declare function PARAMCHECK(...options: any[]): void;
+declare function CONDITIONALPARAMCHECK(...options: any[]): void;
+declare function INVALIDPLAYLIST(msg: string): void;
+declare function toNumber(str: string, radix?: number): number;
+declare function hexToByteSequence(str: string): Uint8Array;
+declare function byteSequenceToHex(sequence: ArrayBuffer, start?: number, end?: number): string;
+declare function tryCatch<T>(body: () => T, errorHandler: (err: unknown) => T): T;
+declare function splitAt(str: string, delimiter: string, index?: number): [string] | [string, string];
+declare function trim(str: string | undefined, char?: string): string | undefined;
+declare function splitByCommaWithPreservingQuotes(str: string): string[];
+declare function camelify(str: string): string;
+declare function formatDate(date: Date): string;
+declare function hasOwnProp(obj: object, propName: string): boolean;
+declare function setOptions(newOptions?: Partial<Options>): void;
+declare function getOptions(): Options;
+export { THROW, ASSERT, CONDITIONALASSERT, PARAMCHECK, CONDITIONALPARAMCHECK, INVALIDPLAYLIST, toNumber, hexToByteSequence, byteSequenceToHex, tryCatch, splitAt, trim, splitByCommaWithPreservingQuotes, camelify, formatDate, hasOwnProp, setOptions, getOptions };
