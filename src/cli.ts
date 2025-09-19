@@ -36,10 +36,11 @@ async function main() {
     /**
      * Batch mode: process jobs from CSV manifest file.
      * Each row should have feedSlug, start, end columns.
+     * If a 'comment' column is present, it will be included in the summary.
      * Results are written to output/MMDDYYYY_timestamp_pairs.json.
      */
-    const rows = parse(fs.readFileSync(argv.manifest, 'utf8'), { columns: true }) as Array<{ feedSlug: string; start: string; end: string }>;
-    for (const { feedSlug, start, end } of rows) {
+    const rows = parse(fs.readFileSync(argv.manifest, 'utf8'), { columns: true }) as Array<{ feedSlug: string; start: string; end: string; comment?: string }>;
+    for (const { feedSlug, start, end, comment } of rows) {
       const job: ClipJob = {
         feedSlug, start, end,
         formats: argv.formats,
@@ -49,7 +50,7 @@ async function main() {
       };
       try {
         const res = await processJob(job);
-        summary.push({ feedSlug, start, end, ...res.urls });
+        summary.push({ feedSlug, start, end, comment, ...res.urls });
       } catch (err: any) {
         console.error(`❌ ${feedSlug} ${start}→${end}: ${err.message}`);
       }
@@ -72,6 +73,7 @@ async function main() {
   } else {
     /**
      * Single job mode: process a single audio clip job from CLI arguments.
+     * Optionally accepts a --comment argument.
      */
     const job: ClipJob = {
       feedSlug: argv.feedSlug,
@@ -83,7 +85,14 @@ async function main() {
       m3u8Url:  `https://live.orcasound.net/${argv.feedSlug}/playlist.m3u8`
     };
     const { urls } = await processJob(job);
-    console.log('✅ Uploaded files:', urls);
+    const singleSummary = {
+      feedSlug: argv.feedSlug,
+      start: argv.start,
+      end: argv.end,
+      comment: argv.comment,
+      ...urls
+    };
+    console.log('✅ Uploaded files:', singleSummary);
   }
 }
 

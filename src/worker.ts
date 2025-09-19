@@ -145,13 +145,42 @@ export async function processJob(job: ClipJob): Promise<ClipResult> {
     outputs['psd'] = metricsPath;
   }
 
-  // 8. Upload to S3 (or swap out with local copy logic)
+  // 8. Write .meta.json file for each clip
+  const meta = {
+    feedSlug: job.feedSlug,
+    start: job.start,
+    end: job.end,
+    formats: job.formats,
+    durationSec: durSec,
+    files: { ...outputs },
+    hash,
+    created: new Date().toISOString()
+  };
+  const metaPath = path.join(tmpDir, `${base}.meta.json`);
+  fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2));
+  outputs['meta'] = metaPath;
+
+  // 9. Move/copy all outputs to a shared output directory (e.g., output/clips/)
+  const outputDir = path.join(process.cwd(), 'output', 'clips');
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
+  }
   const urls: Record<string, string> = {};
+  for (const [fmt, localPath] of Object.entries(outputs)) {
+    const destPath = path.join(outputDir, path.basename(localPath));
+    try {
+      fs.copyFileSync(localPath, destPath);
+      urls[fmt] = destPath;
+    } catch (err) {
+      console.error(`Failed to copy ${localPath} to ${destPath}:`, err);
+    }
+  }
+
+  // 10. (Optional) S3 upload logic is commented out for now
+  /*
   for (const [fmt, localPath] of Object.entries(outputs)) {
     const key = `${job.s3Prefix}${job.feedSlug}/${dt.slice(0, 4)}/${dt.slice(4, 6)}/${dt.slice(6, 8)}/${base}.${fmt}`;
     const body = fs.readFileSync(localPath);
-
-    // Upload file to S3
     await s3.send(new PutObjectCommand({
       Bucket: job.s3Bucket,
       Key: key,
@@ -160,8 +189,9 @@ export async function processJob(job: ClipJob): Promise<ClipResult> {
     }));
     urls[fmt] = `s3://${job.s3Bucket}/${key}`;
   }
+  */
 
-  // 9. Clean up temp files if desired (uncomment to enable)
+  // 11. Clean up temp files if desired (uncomment to enable)
   // fs.rmSync(tmpDir, { recursive: true, force: true });
 
   return { urls, hash };

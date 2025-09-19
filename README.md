@@ -76,8 +76,9 @@ A summary file will be written to the `output/` directory, named as `MMDDYYYY_ti
 
 ## Output
 
-- Audio files and analytics are uploaded to your specified S3 bucket.
-- Output S3 URLs are printed to the console and/or written to the summary JSON in the `output/` directory in batch mode.
+- Audio files and analytics are written to the local `output/clips/` directory.
+- Each clip includes a `.wav` (and/or `.flac`), `.psd.json` (if requested), and `.meta.json` sidecar file with metadata.
+- Output file paths are printed to the console and/or written to the summary JSON in the `output/` directory in batch mode.
 
 ---
 
@@ -85,9 +86,9 @@ A summary file will be written to the `output/` directory, named as `MMDDYYYY_ti
 
 ### cli.ts
 - Provides a command-line interface for both single and batch audio extraction jobs.
-- Accepts arguments for feed, time window, formats, S3 bucket, and manifest CSV.
-- In batch mode, reads a CSV manifest and processes each row as a job, writing a summary JSON to the `output/` directory.
-- In single mode, processes one job and prints the S3 URLs to the console.
+- Accepts arguments for feed, time window, formats, output directory, manifest CSV, and optional detection comment.
+- In batch mode, reads a CSV manifest and processes each row as a job, writing a summary JSON to the `output/` directory. If a `comment` column is present in the CSV, it is included in the summary.
+- In single mode, processes one job and prints the output file paths and comment to the console.
 - Internally calls `processJob` from `worker.ts` for all processing.
 
 ### worker.ts
@@ -97,8 +98,9 @@ A summary file will be written to the `output/` directory, named as `MMDDYYYY_ti
   3. Downloads and concatenates audio segments using ffmpeg.
   4. Converts audio to the requested formats (WAV, FLAC).
   5. Computes analytics (PSD) if requested, using `analytics.ts`.
-  6. Uploads all outputs to S3.
-  7. Returns a summary object with S3 URLs and a deterministic hash.
+  6. Writes all outputs to a local shared folder (`output/clips/`).
+  7. Writes a `.meta.json` file for each clip with metadata.
+  8. Returns a summary object with output file paths and a deterministic hash.
 - Used by the CLI and can be imported in other scripts for programmatic batch processing.
 
 ### analytics.ts
