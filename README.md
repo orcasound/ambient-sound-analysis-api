@@ -10,20 +10,62 @@ Paul
 
 ---
 
-## Prerequisites / Dependencies
+## Prerequisites
+
 ```
 npm install \
   @aws-sdk/client-s3 \
   axios \
   hls-parser \
-  fluent-ffmpeg \
   ffmpeg-static \
   wav-decoder \
   fft-js \
   csv-parse \
   yargs \
+  express \
+  @types/express \
   @types/node --save-dev
 ```
+
+---
+
+## Design
+
+```mermaid
+flowchart TD
+    Start([Start])
+    CLI[CLI (cli.ts)]
+    API[REST API (api.ts)]
+    ParseArgs[Parse CLI Args / Parse API Request]
+    BatchCheck{Batch Mode?}
+    ReadCSV[Read CSV Manifest]
+    ForEachJob[For Each Job]
+    SingleJob[Single Job]
+    ProcessJob[processJob (worker.ts)]
+    Download[Download HLS Segments]
+    FFMPEG[Run ffmpeg (WAV/FLAC)]
+    PSD[Compute PSD (analytics.ts)]
+    Meta[Write .meta.json]
+    Output[Write Output Files]
+    Summary[Write pairs.json (batch)]
+    End([End])
+
+    Start --> CLI
+    Start --> API
+    CLI --> ParseArgs
+    API --> ParseArgs
+    ParseArgs --> BatchCheck
+    BatchCheck -- Yes --> ReadCSV --> ForEachJob
+    ForEachJob --> ProcessJob
+    BatchCheck -- No --> SingleJob --> ProcessJob
+    ProcessJob --> Download --> FFMPEG
+    FFMPEG --> PSD
+    PSD --> Meta
+    Meta --> Output
+    Output --> Summary
+    Summary --> End
+    Output --> End
+    ```
 
 ---
 
@@ -36,19 +78,20 @@ You can extract and save a single audio clip using the CLI:
 ```sh
 npx ts-node src/cli.ts \
   --feedSlug orcasound_lab \
-  --start 2025-09-18T12:00:00Z \
-  --end 2025-09-18T12:05:00Z \
-  --formats wav psd \
+  --start 2025-09-17T12:00:00Z \
+  --end 2025-09-17T12:05:00Z \
+  --formats wav flac psd \
   --out local
 ```
 
-- To use S3 output (placeholder, not yet implemented):
+- To use S3 output (Disabled):
 
 ```sh
 npm run clip -- \
   --feedSlug orcasound_lab \
   --start 2025-09-12T10:00:00Z \
   --end   2025-09-12T10:05:00Z \
+  --formats wav flac psd \
   --out   s3   # or local
   # --s3Bucket your-bucket-name \
   # --s3Prefix clips/
@@ -68,8 +111,8 @@ Example:
 
 ```csv
 feedSlug,start,end
-orcasound_lab,2025-09-18T12:00:00Z,2025-09-18T12:05:00Z
-orcasound_lab,2025-09-18T13:00:00Z,2025-09-18T13:05:00Z
+orcasound_lab,2025-09-17T12:00:00Z,2025-09-17T12:05:00Z
+orcasound_lab,2025-09-17T13:00:00Z,2025-09-17T13:05:00Z
 ```
 
 Run batch processing:
@@ -77,7 +120,7 @@ Run batch processing:
 ```sh
 npx ts-node src/cli.ts \
   --manifest jobs.csv \
-  --formats wav psd
+  --formats wav flac psd
 ```
 
 A summary file will be written to the `clips/<feedSlug>/<YYYY>/<MM>/<DD>/` directory, named as `pairs.json` (e.g., `clips/orcasound_lab/2025/09/18/pairs.json`).
@@ -139,7 +182,7 @@ docker run -v $(pwd)/output:/app/output ambient-sound-api --manifest jobs.csv --
 ### Run a single job
 
 ```sh
-docker run -v $(pwd)/output:/app/output ambient-sound-api --feedSlug orcasound_lab --start 2025-09-18T12:00:00Z --end 2025-09-18T12:05:00Z --formats wav
+docker run -v $(pwd)/output:/app/output ambient-sound-api --feedSlug orcasound_lab --start 2025-09-17T12:00:00Z --end 2025-09-17T12:05:00Z --formats wav
 ```
 
 - The `-v $(pwd)/output:/app/output` mounts your local output folder to the container so results are accessible on your host.
@@ -156,3 +199,102 @@ docker run -v $(pwd)/output:/app/output ambient-sound-api --feedSlug orcasound_l
 - If you see errors about missing Node.js types (e.g., `process`, `Buffer`), ensure you have installed `@types/node` as shown above.
 - For CSV parsing, the code uses `csv-parse/sync` with named import: `import { parse } from 'csv-parse/sync';`.
 - The batch mode expects the CSV columns to be named exactly: `feedSlug`, `start`, `end`.
+
+---
+
+## REST API Usage (Optional)
+
+A REST API is provided for programmatic access to clip and batch generation.
+
+### Start the API server
+
+```sh
+npx ts-node src/api.ts
+```
+
+### Endpoints
+
+- `POST /clip` — Generate a single clip and return file paths and metadata.
+  - Request body: JSON matching the ClipJob interface (see below).
+  - Response: JSON with output file paths and hash.
+
+- `POST /batch` — Generate multiple clips from an array of jobs.
+  - Request body: `{ "jobs": [ ClipJob, ... ] }`
+  - Response: `{ "results": [ ... ] }` (each result includes job info, output, or error)
+
+- `GET /pairs?feedSlug=...&date=YYYY-MM-DD` — Retrieve pairs.json for a given feed/date.
+  - Returns the summary JSON for that day and feed.
+
+### Example: Generate a single clip
+
+```sh
+curl -X POST http://localhost:3000/clip \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "feedSlug": "orcasound_lab",
+    "start": "2025-09-17T12:00:00Z",
+    "end": "2025-09-17T12:05:00Z",
+    "formats": ["wav", "flac", "psd"],
+    "out": "local"
+  }'
+```
+**Example response:**
+```json
+{
+  "urls": {
+    "wav": "output/clips/orcasound_lab/2025/09/18/orcasound_lab_20250918..._300s_xxxxxxxx.wav",
+    "flac": "output/clips/orcasound_lab/2025/09/18/orcasound_lab_20250918..._300s_xxxxxxxx.flac",
+    "psd": "output/clips/orcasound_lab/2025/09/18/orcasound_lab_20250918..._300s_xxxxxxxx.psd.json",
+    "meta": "output/clips/orcasound_lab/2025/09/18/orcasound_lab_20250918..._300s_xxxxxxxx.meta.json"
+  },
+  "hash": "xxxxxxxx"
+}
+```
+
+### Example: Batch job
+
+```sh
+curl -X POST http://localhost:3000/batch \
+  -H 'Content-Type: application/json' \
+  -d '{ "jobs": [ { "feedSlug": "orcasound_lab", "start": "2025-09-17T12:00:00Z", "end": "2025-09-17T12:05:00Z", "formats": ["wav", "flac", "psd"] } ] }'
+```
+**Example response:**
+```json
+{
+  "results": [
+    {
+      "feedSlug": "orcasound_lab",
+      "start": "2025-09-17T12:00:00Z",
+      "end": "2025-09-17T12:05:00Z",
+      "formats": ["wav", "flac", "psd"],
+      "urls": {
+        "wav": "output/clips/orcasound_lab/2025/09/18/orcasound_lab_20250918..._300s_xxxxxxxx.wav",
+        "flac": "output/clips/orcasound_lab/2025/09/18/orcasound_lab_20250918..._300s_xxxxxxxx.flac",
+        "psd": "output/clips/orcasound_lab/2025/09/18/orcasound_lab_20250918..._300s_xxxxxxxx.psd.json",
+        "meta": "output/clips/orcasound_lab/2025/09/18/orcasound_lab_20250918..._300s_xxxxxxxx.meta.json"
+      },
+      "hash": "xxxxxxxx"
+    }
+  ]
+}
+```
+
+### Example: Retrieve pairs.json
+
+```sh
+curl "http://localhost:3000/pairs?feedSlug=orcasound_lab&date=2025-09-18"
+```
+**Example response:**
+```json
+[
+  {
+    "feedSlug": "orcasound_lab",
+    "start": "2025-09-17T12:00:00Z",
+    "end": "2025-09-17T12:05:00Z",
+    "wav": "output/clips/orcasound_lab/2025/09/18/orcasound_lab_20250918..._300s_xxxxxxxx.wav",
+    "flac": "output/clips/orcasound_lab/2025/09/18/orcasound_lab_20250918..._300s_xxxxxxxx.flac",
+    "psd": "output/clips/orcasound_lab/2025/09/18/orcasound_lab_20250918..._300s_xxxxxxxx.psd.json",
+    "meta": "output/clips/orcasound_lab/2025/09/18/orcasound_lab_20250918..._300s_xxxxxxxx.meta.json"
+  }
+]
+```
