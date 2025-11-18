@@ -1,20 +1,15 @@
 # ambient-sound-analysis-api
 Serverless API for batch processing HLS streams into WAV and Power Spectral Density (PSD) data for acoustic data visualization, AIS pairing, and AI training, based on the ambient-sound-analysis repo. 
 
-Proposed subpackages:
-- api/ (FastAPI routes + OpenAPI)
-- workers/ (Lambda or container jobs for HLS→WAV/PSD)
-- lib/ (shared transforms, ffmpeg wrappers, PSD, bandpass utils)
-- cli/ (batch jobs for backfills)
-- infra/ (Infrastructure as Code for Lambda / Elastic Container Registry (ECR), e.g., Terraform)
-
 ### Overview
 
-Skills needed: React/TypeScript, Node, audio analysis, data visualization
+Skills needed: web engineering, audio analysis, data visualization
+
+Proposed stack: Python / FastAPI / ffmpeg / React-Typescript
 
 We want to build a production-ready noise analytics layer for the [live.orcasound.net](http://live.orcasound.net/) application so moderators and community scientists can easily contextualize and interpret the noises heard in audio feeds, identify candidates for different sound types, and track noise pollution for conservation purposes. We would also expose endpoints so that metrics can be consumed for other projects. 
 
-The proposed way to implement this is to create a backend Node worker that performs 4 functions:
+The proposed way to implement this is to create an API that performs 4 functions:
 1. converts a sequence of HLS segments into a WAV file
 2. batch converts a series of HLS sequences into WAV files 
 3. computes Power Spectral Density (PSD) and noise metrics for each HLS sequence
@@ -33,12 +28,12 @@ This project builds on the work of several previous contributors. Reference repo
 
 How this project differs from and complements other efforts:
 1. ambient-sound-analysis -- borrows analytics such as RMS broadband, PSD grids, signal to noise, transience, and applies them for production on the live stream app
-2. seastats-dashboard -- borrows analytics like sound level and exceedance, and adds a production data engine, action-oriented UI, and API endpoints
-3. orcanode-monitor -- system monitoring is complementary to this project for determining if 'quiet' means system down, or 'loud' means clipping
-4. orca-shipnoise -- produces standardized acoustic measures that can be paired with AIS data when available to define the identity, speed, and noise impact of specific vessels
-5. bioacoustic-dashboard -- provides the metrics data needed for this or similar dashboards
+2. seastats-dashboard -- borrows analytics like sound level and exceedance, and adds a production data pipeline, action-oriented UI, and API endpoints
+3. orcanode-monitor -- complementary metrics for determining if 'quiet' means system down, or 'loud' means clipping
+4. orca-shipnoise -- provides noise analytics for specific vessels and boat speeds
+5. bioacoustic-dashboard -- provides an acoustic metrics API that can be used for a variety of dashboards or data sources
 
-Below are a series of standard noise analysis metrics that we can calculate, building from basic to most advanced.
+Below are some thoughts about standard noise analysis metrics we might calculate, building from basic to most advanced. Many of these were researched using ChatGPT.
 
 ### 1. Loudness
 How loud is the current noise environment relative to ambient noise floor, max threshold, or long term averages? 
@@ -67,7 +62,7 @@ To define the masking threshold, make an empirical judgement of the minimum loud
 
 ### 4. Rolling noise floor
 
-_Chart: multi-percentile ribbon plot _
+_Chart: multi-percentile ribbon plot_
 Instead of calculating a simple average, which can be easily skewed by spikes, calculate 10%/50%/90% percentiles, e.g. “within X time window, the sound level exceeded a threshold of Y dB, Z% of the time”
 
 - 10th percentile: true background or ambient noise floor, less affected by transient spikes.
@@ -78,6 +73,10 @@ _Defaults_
 - Start with a 60-second rolling window; compute P10/P50/P90. 
 - Set the “exceedance threshold” to 90% of the last 24 hours. 
 - Optional user controls for time window and level threshold.
+
+_Example of a "multi percentile ribbon plot"_
+
+<img width="967" height="597" alt="Image" src="https://github.com/user-attachments/assets/05aeee9d-32eb-458c-8861-a3e71a3262b5" />
 
 
 ### 5. Bandpower bins
