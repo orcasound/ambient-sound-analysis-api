@@ -55,3 +55,39 @@ class PSDTimeseriesResponse(BaseModel):
     end: str
     columns: List[str]
     points: List[PSDTimeseriesPoint]
+
+
+class DailySummaryPoint(BaseModel):
+    time_of_day: str
+    value: float
+
+
+class DailySummaryResponse(BaseModel):
+    hydrophone: str
+    start_date: str
+    num_days: int
+    band_low: int
+    band_high: int
+    description: str
+    mean_length: int
+    min_length: int
+    max_length: int
+    count_length: int
+    mean: List[DailySummaryPoint]
+    min: List[DailySummaryPoint]
+    max: List[DailySummaryPoint]
+    count: List[DailySummaryPoint]
+
+
+class DailyBroadbandPoint(BaseModel):
+    date: str
+    value: float
+
+
+class DailyBroadbandSummaryResponse(BaseModel):
+    hydrophone: str
+    start_date: str
+    num_days: int
+    summary_purpose: str
+    point_count: int
+    points: List[DailyBroadbandPoint]

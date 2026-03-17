@@ -1,11 +1,11 @@
 # Agent Context
 
 ## Latest session update
-- Current objective: clean up repo hygiene before the first commit.
-- What changed: restored the repo `.gitignore` with macOS, Python bytecode/cache, coverage, local env, and editor ignore rules so generated files are not tracked.
-- Next step: remove already-staged `.DS_Store` and `__pycache__` files from the index, then re-stage from the final working tree with `git add -A`.
-- Blockers/risks: `.gitignore` does not retroactively unstage files that were already added, so the cached junk files still need to be removed from the index explicitly.
-- Branch and latest commit: `move-stuff` / `49d1c5a`
+- Current objective: round out aggregation support with a true daily broadband endpoint and keep the daily-summary responses understandable.
+- What changed: added `GET /aggregations/daily-broadband-summary` as a thin wrapper around `DailyNoiseAnalysis.create_broadband_daily_noise(...)`, with a small per-day response model and README documentation. The existing `/aggregations/daily-summary` remains the PSD-band daily-pattern endpoint with clearer explanatory fields. Verified the new broadband summary returns two points for `orcasound_lab` on `2020-01-01` through `2020-01-02`, and `python -m compileall app` still passes.
+- Next step: commit the aggregation work, then choose whether the next feature is more aggregation surfaces, a browser-oriented visualization/downsampling endpoint, or both.
+- Blockers/risks: `/aggregations/daily-summary` is still a very large payload for browser use and contains upstream gaps/NaNs, while the new broadband daily endpoint is much lighter but answers a different question.
+- Branch and latest commit: `main` / `21452fa`
 
 ## Current objective
 Stand up `ambient-sound-analysis-api` as a thin FastAPI layer around the `orcasound_noise` package from `ambient-sound-analysis`, starting with simple read-only GET endpoints over precomputed parquet-backed data.
