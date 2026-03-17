@@ -39,6 +39,8 @@ class BroadbandTimeseriesResponse(BaseModel):
     delta_t: int
     start: str
     end: str
+    expected_point_count: int
+    point_count: int
     points: List[TimeseriesPoint]
 
 
@@ -53,6 +55,8 @@ class PSDTimeseriesResponse(BaseModel):
     delta_f: str
     start: str
     end: str
+    expected_point_count: int
+    point_count: int
     columns: List[str]
     points: List[PSDTimeseriesPoint]
 
@@ -91,3 +95,33 @@ class DailyBroadbandSummaryResponse(BaseModel):
     summary_purpose: str
     point_count: int
     points: List[DailyBroadbandPoint]
+
+
+class BroadbandAggregationPoint(BaseModel):
+    timestamp: str
+    value: float
+
+
+class BroadbandAggregationResponse(BaseModel):
+    hydrophone: str
+    start: str
+    end: str
+    interval: str
+    summary_purpose: str
+    point_count: int
+    points: List[BroadbandAggregationPoint]
+
+
+class PSDHeatmapResponse(BaseModel):
+    hydrophone: str
+    start: str
+    end: str
+    delta_t: int
+    delta_f: str
+    interval: str
+    summary_purpose: str
+    time_count: int
+    frequency_count: int
+    times: List[str]
+    frequencies: List[str]
+    values: List[List[float]]

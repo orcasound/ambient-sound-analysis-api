@@ -56,12 +56,31 @@ def _cached_available_hydrophones() -> tuple[str, ...]:
     return tuple(get_available_hydrophones())
 
 
+def _default_option_hydrophones() -> tuple[str, ...]:
+    return tuple(
+        hydrophone
+        for hydrophone in _cached_available_hydrophones()
+        if hydrophone != "sandbox"
+    )
+
+
 def _empty_coverage_summary() -> dict[str, Any]:
     return {
         "starts": [],
         "ends": [],
         "file_count": 0,
     }
+
+
+def _key_matches_hydrophone(key: str, hydrophone_name: str, save_folder: str) -> bool:
+    hydrophone_segment = f"/{hydrophone_name}/"
+    partition_segment = f"hydrophone={hydrophone_name}"
+    normalized_prefix = save_folder.rstrip("/")
+
+    if normalized_prefix.endswith(f"/{hydrophone_name}"):
+        return key.startswith(f"{normalized_prefix}/")
+
+    return partition_segment in key or hydrophone_segment in key
 
 
 def _scan_hydrophone_archive(hydrophone: Any) -> dict[str, Any]:
@@ -82,6 +101,13 @@ def _scan_hydrophone_archive(hydrophone: Any) -> dict[str, Any]:
 
     try:
         for item in connector.archive_resource.objects.filter(Prefix=connector.save_folder):
+            if not _key_matches_hydrophone(
+                item.key,
+                hydrophone.name.lower(),
+                connector.save_folder,
+            ):
+                continue
+
             filename = item.key.split("/")[-1]
             if not filename.endswith(".parquet") or filename.startswith("ancient"):
                 continue
@@ -193,7 +219,7 @@ def get_options(raw_hydrophone: Optional[str] = None) -> OptionsResponse:
     else:
         hydrophone_options = [
             _get_options_for_normalized_hydrophone(hydrophone.upper())
-            for hydrophone in _cached_available_hydrophones()
+            for hydrophone in _default_option_hydrophones()
         ]
     return OptionsResponse(hydrophones=hydrophone_options)
 

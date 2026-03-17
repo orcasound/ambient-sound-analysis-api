@@ -2,6 +2,18 @@
 
 Notes for possible issues or documentation improvements to report to `ambient-sound-analysis` / `orcasound_noise` maintainers.
 
+## Currently available records from the Accessor
+
+There are 22 months of data archived, just for Orcasound Lab from Jan 1, 2020 – Oct 31, 2021. 
+```
+# broadband - 1 day
+http://localhost:8001/timeseries/broadband?hydrophone=orcasound_lab&start=2021-10-31T00:00:00&end=2021-11-01T00:00:10&delta_t=1
+
+# 1/3 octave PSD - 1 day
+http://localhost:8001/timeseries/psd?hydrophone=orcasound_lab&start=2021-10-31T00:00:00&end=2021-11-01T00:00:10&delta_t=1&delta_f=3oct
+
+```
+
 ## Confirmed runtime issue
 
 ### `NoiseAccessor.get_options()` can fail on malformed S3 object names
@@ -27,6 +39,39 @@ Notes for possible issues or documentation improvements to report to `ambient-so
   - audit the pipeline/file-writing path to ensure parquet index timestamps match the filename date range
   - consider validating parquet index bounds before upload
   - consider surfacing a warning or rejecting files whose internal timestamps disagree with the filename
+
+### `S3FileConnector.get_files()` can return files for the wrong hydrophone when a hydrophone uses a broad shared prefix
+
+- Observed behavior: this is confirmed for hydrophones whose `save_folder` points at a broad shared prefix rather than a hydrophone-specific prefix.
+- Confirmed example:
+  - `Hydrophone.ORCASOUND_LAB` uses a hydrophone-specific prefix like `ambient-sound-analysis/orcasound_lab/...`, and its counts do not appear to be mixed with other hydrophones
+  - `Hydrophone.SANDBOX` uses `connector.save_folder = 'ambient-sound-analysis'`
+  - for `sandbox`, `get_files(..., hz_bands='12oct')` returned keys under other hydrophones such as `hydrophone=orcasound_lab`, `hydrophone=port_townsend`, and `hydrophone=sunset_bay`
+  - a direct scan found no `hydrophone=sandbox` `1s_12oct.parquet` objects in that bucket for the tested range
+- Impact:
+  - this appears to be a `sandbox`-style broad-prefix lookup problem, not a demonstrated problem for hydrophones that already use properly scoped prefixes like `orcasound_lab`
+  - `/options` can over-report combinations for `sandbox` by counting other hydrophones' parquet files
+  - `NoiseAccessor.create_df(...)` can return data from the wrong hydrophone when archive keys are co-mingled under a shared prefix
+  - dataset-specific oddities, such as `sandbox 12oct` columns labeled `0..101`, may be caused by loading a different hydrophone’s file rather than the requested hydrophone’s archive
+- Suggested upstream fix:
+  - make archive file discovery hydrophone-specific by filtering on the hydrophone partition in the object key when `save_folder` is broad
+  - or store each hydrophone under a distinct archive prefix so `save_folder` alone is sufficient
+
+### Archive chunking may be poorly suited for interactive API access
+
+- Observed behavior: trusted `orcasound_lab` archive files are stored as large monthly parquet objects, for example:
+  - `ambient-sound-analysis/orcasound_lab/20200101T000000_20200201T000000_1s_3oct.parquet`
+  - `ambient-sound-analysis/orcasound_lab/20200101T000000_20200201T000000_1s_broadband.parquet`
+- At `delta_t=1`, a single monthly file implies roughly:
+  - 30-day month: `2,592,000` timestamps
+  - 31-day month: `2,678,400` timestamps
+- Impact:
+  - narrow API queries, such as a few minutes or a few hours, may still need to touch a parquet file representing an entire month of second-by-second data
+  - this likely contributes to the 10-25 second first-hit latencies seen in the API for valid requests
+  - PSD files are especially heavy because each timestamp has many frequency columns, not just one broadband value
+- Clarification worth asking upstream:
+  - was monthly chunking chosen deliberately for storage/object-count reasons?
+  - if interactive query latency matters, would smaller archive chunks such as daily or weekly parquet files be a better fit?
 
 ## Documentation / API clarity gaps
 

@@ -1,16 +1,20 @@
-from datetime import date
+from datetime import date, datetime
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 
 from app.models.responses import (
+    BroadbandAggregationResponse,
     DailyBroadbandSummaryResponse,
     DailySummaryResponse,
+    PSDHeatmapResponse,
 )
 from app.services.get_options import OptionsDependencyError
 from app.services.get_aggregations import (
     AggregationLookupError,
+    get_broadband_aggregation,
     get_daily_broadband_summary,
     get_daily_summary,
+    get_psd_heatmap,
 )
 
 
@@ -43,6 +47,73 @@ def daily_broadband_summary(
 ) -> DailyBroadbandSummaryResponse:
     try:
         return get_daily_broadband_summary(hydrophone, start_date, num_days)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OptionsDependencyError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except AggregationLookupError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.get("/broadband", response_model=BroadbandAggregationResponse)
+def broadband_aggregation(
+    response: Response,
+    hydrophone: str = Query(..., description="Hydrophone slug, e.g. bush_point."),
+    start: datetime = Query(..., description="Start datetime in ISO 8601 format."),
+    end: datetime = Query(..., description="End datetime in ISO 8601 format."),
+    interval: str = Query(
+        ...,
+        description="Aggregation bucket: 10s, 1m, 5m, 15m, 1h, 1d, or auto.",
+    ),
+    delta_t: int = Query(1, description="Underlying broadband sample spacing in seconds."),
+    validate: bool = Query(True, description="Validate coverage before loading data."),
+) -> BroadbandAggregationResponse:
+    try:
+        payload = get_broadband_aggregation(
+            raw_hydrophone=hydrophone,
+            start=start,
+            end=end,
+            interval=interval,
+            delta_t=delta_t,
+            validate=validate,
+        )
+        response.headers["X-Point-Count"] = str(payload.point_count)
+        return payload
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OptionsDependencyError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except AggregationLookupError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.get("/psd", response_model=PSDHeatmapResponse)
+def psd_heatmap(
+    response: Response,
+    hydrophone: str = Query(..., description="Hydrophone slug, e.g. bush_point."),
+    start: datetime = Query(..., description="Start datetime in ISO 8601 format."),
+    end: datetime = Query(..., description="End datetime in ISO 8601 format."),
+    interval: str = Query(
+        ...,
+        description="Aggregation bucket: 10s, 1m, 5m, 15m, 1h, 1d, or auto.",
+    ),
+    delta_f: str = Query(..., description="Archived PSD selector such as 3oct, 12oct, or 500hz."),
+    delta_t: int = Query(1, description="Underlying PSD sample spacing in seconds."),
+    validate: bool = Query(True, description="Validate coverage before loading data."),
+) -> PSDHeatmapResponse:
+    try:
+        payload = get_psd_heatmap(
+            raw_hydrophone=hydrophone,
+            start=start,
+            end=end,
+            interval=interval,
+            delta_f=delta_f,
+            delta_t=delta_t,
+            validate=validate,
+        )
+        response.headers["X-Time-Count"] = str(payload.time_count)
+        response.headers["X-Frequency-Count"] = str(payload.frequency_count)
+        return payload
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except OptionsDependencyError as exc:

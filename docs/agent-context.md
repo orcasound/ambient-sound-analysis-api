@@ -1,14 +1,14 @@
 # Agent Context
 
 ## Latest session update
-- Current objective: round out aggregation support with a true daily broadband endpoint and keep the daily-summary responses understandable.
-- What changed: added `GET /aggregations/daily-broadband-summary` as a thin wrapper around `DailyNoiseAnalysis.create_broadband_daily_noise(...)`, with a small per-day response model and README documentation. The existing `/aggregations/daily-summary` remains the PSD-band daily-pattern endpoint with clearer explanatory fields. Verified the new broadband summary returns two points for `orcasound_lab` on `2020-01-01` through `2020-01-02`, and `python -m compileall app` still passes.
-- Next step: commit the aggregation work, then choose whether the next feature is more aggregation surfaces, a browser-oriented visualization/downsampling endpoint, or both.
-- Blockers/risks: `/aggregations/daily-summary` is still a very large payload for browser use and contains upstream gaps/NaNs, while the new broadband daily endpoint is much lighter but answers a different question.
-- Branch and latest commit: `main` / `21452fa`
+- Current objective: keep the browser-oriented aggregation API stable while tightening diagnostics and docs for real frontend testing.
+- What changed: request timing logs in `app/main.py` now ignore browser `.well-known/...` probe requests so `logs/api-timing.log` focuses on actual API traffic, `README.md` now uses the current `GET /aggregations/psd` route name instead of the stale `/aggregations/psd-heatmap` label, and timeseries/aggregation routes now set lightweight response headers so the timing log can include `point_count`, `expected_point_count`, `time_count`, and `frequency_count` without parsing JSON bodies. Aggregation endpoints now also support `interval=auto`, which picks the finest allowed bucket (`10s`, `1m`, `5m`, `15m`, `1h`, `1d`) that keeps the estimated point count at or below roughly 1000. Broadband and PSD aggregation responses are now cached in-process by request parameters so repeated identical long-window requests return quickly instead of rerunning the full chunked aggregation.
+- Next step: continue frontend-oriented aggregation experiments, especially longer-window PSD tests and any additional logging or limits needed to understand cost/latency tradeoffs.
+- Blockers/risks: long-window PSD aggregation remains expensive even with daily chunking, and the timing log is still total-request only rather than per-step breakdown.
+- Branch and latest commit: `main` / `bb60eaa`
 
 ## Current objective
-Stand up `ambient-sound-analysis-api` as a thin FastAPI layer around the `orcasound_noise` package from `ambient-sound-analysis`, starting with simple read-only GET endpoints over precomputed parquet-backed data.
+Stand up `ambient-sound-analysis-api` as a thin FastAPI layer around the `orcasound_noise` package from `ambient-sound-analysis`, with browser-friendly read-only GET endpoints over precomputed parquet-backed data.
 
 ## Current architecture decisions
 - Use Python `3.9.x` for compatibility with `ambient-sound-analysis` package dependencies.
@@ -20,52 +20,43 @@ Stand up `ambient-sound-analysis-api` as a thin FastAPI layer around the `orcaso
   - `uvicorn[standard]`
   - `orcasound_noise @ git+https://github.com/orcasound/ambient-sound-analysis.git`
 - Prefer using `NoiseAccessor` and already-processed S3 parquet files first.
-- Do not start by exposing raw audio / ffmpeg pipeline operations through the API.
+- Do not expose raw audio / `ffmpeg` pipeline operations through the API.
+
+## Current implemented direction
+- Discovery and validation endpoints exist, including `/health`, `/hydrophones`, and `/options`.
+- Raw timeseries endpoints exist for broadband and PSD.
+- Browser-oriented aggregation endpoints exist for broadband and PSD, with fixed bucket choices and validation intended for frontend plotting.
+- Request-timing middleware logs request cost to stdout and `logs/api-timing.log`.
+
+## Important implementation notes
+- `/options` archive scanning was tightened to count only parquet keys that match the requested hydrophone layout.
+- `orcasound_lab` inventory is now accurate under that stricter scan.
+- `sandbox` currently has no safely attributable partitioned parquet inventory under the present archive layout, so `/options?hydrophone=sandbox` returns an empty result.
+- Raw `/timeseries/*` endpoints still enforce a 31-day limit.
+- Aggregation endpoints bypass that raw-window cap so longer-window experiments are possible, but this does not make them cheap.
+- Broadband aggregation now chunks raw reads month-by-month before merging aggregated buckets.
+- PSD aggregation now uses smaller daily raw-data chunks than the earlier monthly version, but long-window PSD remains expensive.
 
 ## Devcontainer notes
-- The reliable workflow is:
+- Reliable workflow:
   1. open `ambient-sound-analysis-api`
   2. reopen in container
   3. add sibling `ambient-sound-analysis` folder to the workspace from inside the container
 - The devcontainer mount is intended to expose sibling repos under `/workspaces/...`.
-- The devcontainer extension list now includes `openai.chatgpt`, `ms-python.python`, `ms-python.vscode-pylance`, `ms-azuretools.vscode-docker`, and `charliermarsh.ruff`.
-
-## What changed so far
-- Created a production `Dockerfile` in repo root.
-- Created a development Dockerfile in `.devcontainer/`.
-- Added `.devcontainer/devcontainer.json`.
-- Added a minimal `requirements.txt`.
-- Implemented `app/main.py` with FastAPI app wiring.
-- Added `/health` and `/options` endpoints.
-- Added an options service that validates hydrophone names and falls back around malformed S3 object names.
-- Added `openai.chatgpt` to the devcontainer extension list.
-- Documented the setup process and architectural reasoning in the blog draft in `adrmac.github.io`.
-
-## Immediate next steps
-1. Run the API:
-   - `uvicorn app.main:app --reload --host 0.0.0.0 --port 8000`
-2. Verify:
-   - `GET /health`
-   - `GET /options?hydrophone=bush_point`
-3. Confirm whether `/options` should return non-empty values for the target hydrophones.
-4. Add bounded timeseries endpoints for broadband / PSD access.
+- The devcontainer extension list includes `openai.chatgpt`, `ms-python.python`, `ms-python.vscode-pylance`, `ms-azuretools.vscode-docker`, and `charliermarsh.ruff`.
 
 ## Risks / blockers
 - `ambient-sound-analysis` uses older scientific Python dependencies and is not compatible with Python `3.12`.
-- The package may include code paths that require `ffmpeg`, but the initial API plan is to avoid those paths.
+- The package may include code paths that require `ffmpeg`, but the API plan is to avoid those paths.
 - Multi-root workspace + child-repo devcontainer behavior in VS Code is fragile; using the child repo as the container entrypoint is the stable path.
-- `NoiseAccessor.get_options()` can fail on malformed S3 object names; the API currently works around this by skipping invalid keys.
+- Long-window aggregation still pays first-hit latency because it reads underlying timeseries before resampling.
+- The archive layout is inconsistent across hydrophones, so validation and discovery behavior can vary by hydrophone.
 
-## Clarifications from prior reasoning
+## Clarifications
 - Installing `orcasound_noise` from Git should also install its declared Python dependencies automatically.
 - Git must be available in the container for pip Git URL installs.
 - `ffmpeg` is a system dependency, not a Python dependency. It is only needed if the API actually exercises raw-audio conversion paths.
-- `NoiseAccessor` appears to use S3/parquet access paths and is the preferred starting integration point.
-- `postCreateCommand` runs after container creation; it does not rebuild the image. It is a convenience for early development, not an image-layer dependency mechanism.
-
-## Branch / commit
-- Branch: `move-stuff`
-- Latest commit at handoff: `49d1c5a`
+- `postCreateCommand` runs after container creation; it does not rebuild the image.
 
 ## Note on persistence
 Repo files can preserve instructions and handoff context for future Codex sessions. They cannot force:

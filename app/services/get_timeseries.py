@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta
 from functools import lru_cache
+import math
+from typing import Optional
 
 from app.models.responses import (
     BroadbandTimeseriesResponse,
@@ -25,11 +27,22 @@ class TimeseriesDataIntegrityError(TimeseriesLookupError):
     pass
 
 
-def _validate_range(start: datetime, end: datetime) -> None:
+def _expected_point_count(start: datetime, end: datetime, delta_t: int) -> int:
+    duration_seconds = (end - start).total_seconds()
+    if duration_seconds <= 0:
+        return 0
+    return math.ceil(duration_seconds / delta_t)
+
+
+def _validate_range(
+    start: datetime,
+    end: datetime,
+    max_window_days: Optional[int] = MAX_WINDOW_DAYS,
+) -> None:
     if end <= start:
         raise ValueError("end must be after start")
-    if end - start > timedelta(days=MAX_WINDOW_DAYS):
-        raise ValueError(f"date range must be {MAX_WINDOW_DAYS} days or less")
+    if max_window_days is not None and end - start > timedelta(days=max_window_days):
+        raise ValueError(f"date range must be {max_window_days} days or less")
 
 
 def _get_hydrophone(raw_hydrophone: str):
@@ -166,11 +179,12 @@ def _load_timeseries_df(
     delta_t: int,
     delta_f: str,
     detect_data_integrity: bool = False,
+    max_window_days: Optional[int] = MAX_WINDOW_DAYS,
 ):
     if delta_t <= 0:
         raise ValueError("delta_t must be greater than 0")
 
-    _validate_range(start, end)
+    _validate_range(start, end, max_window_days=max_window_days)
     NoiseAccessor, hydrophone = _get_hydrophone(raw_hydrophone)
 
     try:
@@ -235,6 +249,8 @@ def _get_broadband_timeseries_cached(
         delta_t=delta_t,
         start=start.isoformat(),
         end=end.isoformat(),
+        expected_point_count=_expected_point_count(start, end, delta_t),
+        point_count=len(points),
         points=points,
     )
 
@@ -299,6 +315,8 @@ def _get_psd_timeseries_cached(
         delta_f=normalized_delta_f,
         start=start.isoformat(),
         end=end.isoformat(),
+        expected_point_count=_expected_point_count(start, end, delta_t),
+        point_count=len(points),
         columns=columns,
         points=points,
     )

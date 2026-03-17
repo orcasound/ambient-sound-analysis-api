@@ -59,6 +59,12 @@ The response is organized by actual stored combinations:
 - `octave_bands`: one record per `delta_f` + `delta_t`
 - `delta_hz`: one record per `delta_f` + `delta_t`
 
+Note:
+
+- the default all-hydrophones `/options` scan skips `sandbox`
+- `sandbox` can still be requested explicitly with `?hydrophone=sandbox`
+- this is intentional because `sandbox` uses a mixed archive prefix that is slower to scan and not currently trustworthy for default inventory reporting
+
 ### `GET /timeseries/broadband`
 
 Returns broadband timeseries points for a hydrophone and time window.
@@ -145,6 +151,61 @@ Response notes:
 - this is a true broadband summary from the upstream broadband product
 - each point represents one day, not one second-of-day
 - this is the better choice when you want a small browser-friendly daily series
+
+### `GET /aggregations/broadband`
+
+Returns a chronologically aggregated broadband series for browser plotting.
+
+Query params:
+
+- `hydrophone` required
+- `start` required, ISO 8601 datetime
+- `end` required, ISO 8601 datetime
+- `interval` required, one of `10s`, `1m`, `5m`, `15m`, `1h`, `1d`, or `auto`
+- `interval=auto` picks the finest allowed bucket that keeps the estimated point count at or below about 1000
+- `delta_t` optional, default `1`
+- `validate` optional, default `true`
+
+Example:
+
+```bash
+curl "http://localhost:8000/aggregations/broadband?hydrophone=sandbox&start=2026-01-27T00:00:00&end=2026-01-27T06:00:00&interval=auto&delta_t=1&validate=true"
+```
+
+Response notes:
+
+- this starts from the true broadband timeseries, then groups it into the requested bucket
+- use this for browser plotting instead of raw per-second broadband over long windows
+- the endpoint rejects requests that would return more than 2000 aggregated points
+
+### `GET /aggregations/psd`
+
+Returns a compact time-frequency matrix for browser plotting.
+
+Query params:
+
+- `hydrophone` required
+- `start` required, ISO 8601 datetime
+- `end` required, ISO 8601 datetime
+- `interval` required, one of `10s`, `1m`, `5m`, `15m`, `1h`, `1d`, or `auto`
+- `interval=auto` picks the finest allowed bucket that keeps the estimated time-bucket count at or below about 1000
+- `delta_f` required, for example `12oct` or `500hz`
+- `delta_t` optional, default `1`
+- `validate` optional, default `true`
+
+Example:
+
+```bash
+curl "http://localhost:8000/aggregations/psd?hydrophone=sandbox&start=2026-01-27T00:00:00&end=2026-01-27T06:00:00&interval=auto&delta_t=1&delta_f=12oct&validate=true"
+```
+
+Response notes:
+
+- `times` contains aggregated time buckets
+- `frequencies` contains the archived PSD band labels
+- `values` is a row-aligned matrix where each row matches one `times` entry
+- this is the browser-friendly companion to raw `/timeseries/psd`
+- the endpoint rejects requests that would return more than 2000 time buckets
 
 ## Notes
 
