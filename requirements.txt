@@ -1,0 +1,3 @@
+fastapi
+uvicorn[standard]
+orcasound_noise @ git+https://github.com/orcasound/ambient-sound-analysis.git
