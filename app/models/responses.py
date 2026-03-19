@@ -72,6 +72,7 @@ class DailySummaryResponse(BaseModel):
     num_days: int
     band_low: int
     band_high: int
+    interval: str
     description: str
     mean_length: int
     min_length: int

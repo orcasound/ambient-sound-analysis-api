@@ -113,11 +113,13 @@ Query params:
 - `num_days` required
 - `band_low` optional, default `63`
 - `band_high` optional, default `8000`
+- `interval` optional, default `auto`; one of `10s`, `1m`, `5m`, `15m`, `1h`, `1d`, or `auto`
+- `interval=auto` picks the finest allowed bucket that keeps the second-of-day summary at or below about 1000 points
 
 Example:
 
 ```bash
-curl "http://localhost:8000/aggregations/daily-summary?hydrophone=orcasound_lab&start_date=2020-01-01&num_days=2&band_low=63&band_high=8000"
+curl "http://localhost:8000/aggregations/daily-summary?hydrophone=orcasound_lab&start_date=2020-01-01&num_days=2&band_low=63&band_high=8000&interval=auto"
 ```
 
 Response notes:
@@ -125,9 +127,10 @@ Response notes:
 - `summary_purpose` explains why this endpoint exists: it shows a typical daily pattern rather than a raw timeline
 - `time_of_day` is a clock time within the day, not a full timestamp
 - `mean`, `min`, `max`, and `count` are separate series, each with a `*_length` field near the top of the response
-- `mean`, `min`, and `max` summarize the selected days second-by-second
+- `interval` reports the actual time-of-day aggregation bucket used in the response
+- `mean`, `min`, and `max` summarize the selected days bucket-by-bucket across the day
 - these values are averaged across all PSD bands between `band_low` and `band_high`, so this is not the same as a true broadband summary
-- `count` is the number of contributing day-observations at each second-of-day
+- `count` is the mean contributing day-observation count within each returned time-of-day bucket
 - non-finite upstream values are dropped so the JSON remains valid
 
 ### `GET /aggregations/daily-broadband-summary`

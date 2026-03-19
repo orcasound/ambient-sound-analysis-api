@@ -6,6 +6,7 @@
   },
   "workspaceFolder": "/workspaces/orcasound/ambient-sound-analysis-api", // the workspace needs a default folder
   "workspaceMount": "source=${localWorkspaceFolder}/../..,target=/workspaces,type=bind", // this is the critical part -- it tells VS Code to create a 'workspaces' folder in the container, and give it a 'source' to access -- the localWorkspaceFolder is where the container was created (needs a .devcontainer/), and '${localWorkspaceFolder}/../..' gives access to the parent directory two levels up
+
   "customizations": {
     "vscode": {
       "extensions": [ // these are the VS Code extensions that should be installed in the container by default

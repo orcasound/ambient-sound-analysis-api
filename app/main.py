@@ -3,6 +3,7 @@ from pathlib import Path
 import time
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.aggregations import router as aggregations_router
 from app.api.health import router as health_router
@@ -14,6 +15,14 @@ app = FastAPI(
     title="Ambient Sound Analysis API",
     version="0.1.0",
     description="Thin FastAPI wrapper around orcasound_noise.",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 logger = logging.getLogger("ambient_sound_api")

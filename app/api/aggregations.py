@@ -28,9 +28,20 @@ def daily_summary(
     num_days: int = Query(..., description="Number of days to include."),
     band_low: int = Query(63, description="Inclusive low band for averaging."),
     band_high: int = Query(8000, description="Inclusive high band for averaging."),
+    interval: str = Query(
+        "auto",
+        description="Aggregation bucket for the second-of-day summary: 10s, 1m, 5m, 15m, 1h, 1d, or auto.",
+    ),
 ) -> DailySummaryResponse:
     try:
-        return get_daily_summary(hydrophone, start_date, num_days, band_low, band_high)
+        return get_daily_summary(
+            hydrophone,
+            start_date,
+            num_days,
+            band_low,
+            band_high,
+            interval,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except OptionsDependencyError as exc:

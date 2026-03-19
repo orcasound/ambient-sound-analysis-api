@@ -3,6 +3,8 @@ from functools import lru_cache
 import math
 from typing import Any, Tuple
 
+import pandas as pd
+
 from app.models.responses import (
     BroadbandAggregationPoint,
     BroadbandAggregationResponse,
@@ -37,6 +39,8 @@ AGGREGATION_INTERVALS = {
 }
 MAX_AGGREGATION_POINTS = 2000
 AUTO_INTERVAL_TARGET_POINTS = 1000
+DAILY_SUMMARY_WINDOW_START = datetime(2000, 1, 1, 0, 0, 0)
+DAILY_SUMMARY_WINDOW_END = datetime(2000, 1, 2, 0, 0, 0)
 
 
 def _import_daily_noise_analysis() -> Tuple[Any, Any]:
@@ -79,6 +83,21 @@ def _series_to_points(series: Any) -> list[DailySummaryPoint]:
             continue
         points.append(DailySummaryPoint(time_of_day=str(index), value=numeric_value))
     return points
+
+
+def _aggregate_daily_summary_series(series: Any, rule: str) -> Any:
+    if series is None or series.empty:
+        return series
+
+    aggregated = series.copy()
+    anchored_index = pd.to_datetime(
+        [f"{DAILY_SUMMARY_WINDOW_START.date().isoformat()} {value}" for value in aggregated.index]
+    )
+    aggregated.index = anchored_index
+    aggregated = aggregated.resample(rule).mean()
+    aggregated = aggregated.dropna()
+    aggregated.index = aggregated.index.strftime("%H:%M:%S")
+    return aggregated
 
 
 def _broadband_series_to_points(series: Any) -> list[DailyBroadbandPoint]:
@@ -275,11 +294,43 @@ def get_daily_summary(
     num_days: int,
     band_low: int,
     band_high: int,
+    interval: str = "auto",
+) -> DailySummaryResponse:
+    normalized_hydrophone = _normalize_hydrophone_name(raw_hydrophone)
+    return _get_daily_summary_cached(
+        normalized_hydrophone,
+        start_date,
+        num_days,
+        band_low,
+        band_high,
+        interval,
+    )
+
+
+@lru_cache(maxsize=64)
+def _get_daily_summary_cached(
+    raw_hydrophone: str,
+    start_date: date,
+    num_days: int,
+    band_low: int,
+    band_high: int,
+    interval: str = "auto",
 ) -> DailySummaryResponse:
     if num_days <= 0:
         raise ValueError("num_days must be greater than 0")
     if band_low > band_high:
         raise ValueError("band_low must be less than or equal to band_high")
+
+    normalized_interval, rule = _resolve_interval(
+        interval,
+        DAILY_SUMMARY_WINDOW_START,
+        DAILY_SUMMARY_WINDOW_END,
+    )
+    _validate_aggregation_window(
+        DAILY_SUMMARY_WINDOW_START,
+        DAILY_SUMMARY_WINDOW_END,
+        normalized_interval,
+    )
 
     _, DailyNoiseAnalysis, hydrophone = _resolve_hydrophone(raw_hydrophone)
 
@@ -297,6 +348,10 @@ def get_daily_summary(
         min_series = _mean_band_range(summary["min"], band_low, band_high)
         max_series = _mean_band_range(summary["max"], band_low, band_high)
         count_series = summary["count"].mean(axis=1, skipna=True)
+        mean_series = _aggregate_daily_summary_series(mean_series, rule)
+        min_series = _aggregate_daily_summary_series(min_series, rule)
+        max_series = _aggregate_daily_summary_series(max_series, rule)
+        count_series = _aggregate_daily_summary_series(count_series, rule)
     except Exception as exc:
         raise AggregationLookupError(
             f"failed to shape daily summary for hydrophone '{hydrophone.name.lower()}'"
@@ -306,6 +361,17 @@ def get_daily_summary(
     min_points = _series_to_points(min_series)
     max_points = _series_to_points(max_series)
     count_points = _series_to_points(count_series)
+    point_count = max(
+        len(mean_points),
+        len(min_points),
+        len(max_points),
+        len(count_points),
+    )
+    if point_count > MAX_AGGREGATION_POINTS:
+        raise ValueError(
+            f"requested aggregation produced {point_count} points, which exceeds the limit of "
+            f"{MAX_AGGREGATION_POINTS}. Choose a coarser interval."
+        )
 
     return DailySummaryResponse(
         hydrophone=hydrophone.name.lower(),
@@ -313,8 +379,11 @@ def get_daily_summary(
         num_days=num_days,
         band_low=band_low,
         band_high=band_high,
+        interval=normalized_interval,
         description=(
-            "This summary shows the typical daily sound pattern for a hydrophone within a specified frequency range. The four series mean, min, max, and count show data points for each second of the day."
+            "This summary shows the typical daily sound pattern for a hydrophone within a "
+            "specified frequency range. The four series mean, min, max, and count are "
+            "aggregated by time-of-day bucket."
         ),
         mean_length=len(mean_points),
         min_length=len(min_points),
@@ -328,6 +397,20 @@ def get_daily_summary(
 
 
 def get_daily_broadband_summary(
+    raw_hydrophone: str,
+    start_date: date,
+    num_days: int,
+) -> DailyBroadbandSummaryResponse:
+    normalized_hydrophone = _normalize_hydrophone_name(raw_hydrophone)
+    return _get_daily_broadband_summary_cached(
+        normalized_hydrophone,
+        start_date,
+        num_days,
+    )
+
+
+@lru_cache(maxsize=64)
+def _get_daily_broadband_summary_cached(
     raw_hydrophone: str,
     start_date: date,
     num_days: int,

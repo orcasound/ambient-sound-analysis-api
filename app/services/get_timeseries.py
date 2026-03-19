@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 import math
 from typing import Optional
@@ -27,6 +27,12 @@ class TimeseriesDataIntegrityError(TimeseriesLookupError):
     pass
 
 
+def _to_naive_utc(value: datetime) -> datetime:
+    if value.tzinfo is None or value.tzinfo.utcoffset(value) is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
 def _expected_point_count(start: datetime, end: datetime, delta_t: int) -> int:
     duration_seconds = (end - start).total_seconds()
     if duration_seconds <= 0:
@@ -39,6 +45,8 @@ def _validate_range(
     end: datetime,
     max_window_days: Optional[int] = MAX_WINDOW_DAYS,
 ) -> None:
+    start = _to_naive_utc(start)
+    end = _to_naive_utc(end)
     if end <= start:
         raise ValueError("end must be after start")
     if max_window_days is not None and end - start > timedelta(days=max_window_days):
@@ -97,6 +105,8 @@ def _validate_psd_request(
     delta_t: int,
     delta_f: str,
 ) -> None:
+    start = _to_naive_utc(start)
+    end = _to_naive_utc(end)
     hydrophone_options = _get_options_for_hydrophone(raw_hydrophone)
     freq_type, freq_value = _parse_psd_delta_f(delta_f)
     available_options = getattr(hydrophone_options, freq_type)
@@ -139,6 +149,8 @@ def _validate_broadband_request(
     end: datetime,
     delta_t: int,
 ) -> None:
+    start = _to_naive_utc(start)
+    end = _to_naive_utc(end)
     hydrophone_options = _get_options_for_hydrophone(raw_hydrophone)
 
     matching_option = next(
@@ -181,6 +193,8 @@ def _load_timeseries_df(
     detect_data_integrity: bool = False,
     max_window_days: Optional[int] = MAX_WINDOW_DAYS,
 ):
+    start = _to_naive_utc(start)
+    end = _to_naive_utc(end)
     if delta_t <= 0:
         raise ValueError("delta_t must be greater than 0")
 
@@ -224,6 +238,8 @@ def _get_broadband_timeseries_cached(
     delta_t: int,
     validate: bool = True,
 ) -> BroadbandTimeseriesResponse:
+    start = _to_naive_utc(start)
+    end = _to_naive_utc(end)
     if validate:
         _validate_broadband_request(normalized_hydrophone, start, end, delta_t)
 
@@ -277,6 +293,8 @@ def _get_psd_timeseries_cached(
     delta_f: str,
     validate: bool = True,
 ) -> PSDTimeseriesResponse:
+    start = _to_naive_utc(start)
+    end = _to_naive_utc(end)
     normalized_delta_f = delta_f.strip().lower()
     if not normalized_delta_f:
         raise ValueError("delta_f is required")
