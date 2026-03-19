@@ -1,6 +1,11 @@
 # Agent Context
 
 ## Latest session update
+- Current objective: add a README note in the API repo that points readers to the sibling `ambient-sound-analysis-ui` dashboard repo.
+- What changed: updated [README.md](/workspaces/orcasound/ambient-sound-analysis-api/README.md) with a short companion-UI note near the top linking to the sibling [`ambient-sound-analysis-ui`](/workspaces/orcasound/ambient-sound-analysis-ui) repo and its [`README.md`](/workspaces/orcasound/ambient-sound-analysis-ui/README.md) for local dashboard setup and workflow.
+- Next step: if this repo is published independently, consider replacing the local workspace links with final remote repository links in addition to the current local-path references.
+- Blockers/risks: the new README links currently assume the sibling repo exists in the same workspace layout under `/workspaces/orcasound`, which matches the current devcontainer workflow but is not a portable GitHub URL.
+- Branch and latest commit: `main` / `101ca5e`
 - Current objective: prepare the sibling UI repo for sharing by replacing the starter README with a real local-development guide tied to the companion API repo.
 - What changed: rewrote `/workspaces/orcasound/ambient-sound-analysis-ui/README.md` to explain that the UI is not standalone and should be used together with `ambient-sound-analysis-api`. The new README documents the recommended workflow through the API repo devcontainer, required local dependencies, how to start the FastAPI backend and Next.js frontend, the current proxy and port model (`/api` through Next to `API_BASE_URL`, default `http://127.0.0.1:8000`), and common troubleshooting steps.
 - Next step: review the new UI README before publishing the repo and adjust any repo-URL-specific wording once the final org/visibility decision is made.

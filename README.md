@@ -1,6 +1,10 @@
 # ambient-sound-analysis-api
 Thin FastAPI wrapper around `orcasound_noise` for querying archived Orcasound ambient sound products from S3.
 
+Companion UI:
+
+- The dashboard for this API lives in the sibling [`ambient-sound-analysis-ui`](/https://github.com/orcasound/ambient-sound-analysis-ui) repo.
+
 ```
 ambient-sound-analysis-api/
   app/
